@@ -121,7 +121,7 @@ async function showGrantAccessModal(interaction) {
             components: [{
                 type: 4,
                 custom_id: 'user_mention_field',
-                label: 'Упомяните пользователя (@пользователь)',
+                label: 'Упомяните пользователя (в формате username)',
                 style: 1,
                 required: true
             }]
@@ -139,7 +139,7 @@ async function showRevokeAccessModal(interaction) {
             components: [{
                 type: 4,
                 custom_id: 'user_mention_field',
-                label: 'Упомяните пользователя (@пользователь)',
+                label: 'Упомяните пользователя (в формате username)',
                 style: 1,
                 required: true
             }]

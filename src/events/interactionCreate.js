@@ -7,6 +7,11 @@ module.exports = {
             if (interaction.isCommand()) {
                 const command = interaction.client.commands.get(interaction.commandName);
                 if (command) await command.execute(interaction);
+            } else if (interaction.isAutocomplete && interaction.isAutocomplete()) {
+                const command = interaction.client.commands.get(interaction.commandName);
+                if (command && typeof command.autocomplete === 'function') {
+                    await command.autocomplete(interaction);
+                }
             } 
             else if (interaction.isButton()) {
                 const button = interaction.client.buttons.get(interaction.customId);

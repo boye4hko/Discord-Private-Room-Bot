@@ -29,6 +29,27 @@ async function initializeDatabase() {
         `);
 
         await connection.execute(`
+            CREATE TABLE IF NOT EXISTS banned_users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                guild_id VARCHAR(50) NOT NULL,
+                user_id VARCHAR(50) NOT NULL,
+                reason VARCHAR(255),
+                expires_at DATETIME NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_ban (guild_id, user_id)
+            )
+        `);
+
+        try {
+            const [cols] = await connection.execute("SHOW COLUMNS FROM banned_users LIKE 'expires_at'");
+            if (!cols || cols.length === 0) {
+                await connection.execute('ALTER TABLE banned_users ADD COLUMN expires_at DATETIME NULL');
+                console.log('Миграция: добавлено поле banned_users.expires_at');
+            }
+        } catch (e) {
+        }
+
+        await connection.execute(`
             CREATE TABLE IF NOT EXISTS room_voice_states (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 channel_id VARCHAR(50) NOT NULL,
@@ -73,6 +94,22 @@ async function getRoomsByGuildId(guildId) {
     } catch (error) {
         console.error('Ошибка БД:', error);
         return [];
+    }
+}
+
+async function getRoomByName(guildId, name) {
+    try {
+        const connection = await pool.getConnection();
+        const [rows] = await connection.execute(
+            'SELECT * FROM private_rooms WHERE guild_id = ? AND channel_id IS NOT NULL',
+            [guildId]
+        );
+        connection.release();
+        const found = rows.find(r => r.channel_id && r.channel_id.toString() === name);
+        return found || null;
+    } catch (error) {
+        console.error('Ошибка БД:', error);
+        return null;
     }
 }
 
@@ -209,15 +246,69 @@ async function getDeafenedUsers(channelId) {
     }
 }
 
-async function clearVoiceStates(channelId) {
+async function getVoiceState(channelId, userId) {
+    try {
+        const connection = await pool.getConnection();
+        const [rows] = await connection.execute(
+            'SELECT muted, deafened FROM room_voice_states WHERE channel_id = ? AND user_id = ?',
+            [channelId, userId]
+        );
+        connection.release();
+        return rows[0] || { muted: false, deafened: false };
+    } catch (error) {
+        console.error('Ошибка БД:', error);
+        return { muted: false, deafened: false };
+    }
+}
+
+async function removeVoiceState(channelId, userId) {
     try {
         const connection = await pool.getConnection();
         await connection.execute(
-            'DELETE FROM room_voice_states WHERE channel_id = ?',
-            [channelId]
+            'DELETE FROM room_voice_states WHERE channel_id = ? AND user_id = ?',
+            [channelId, userId]
         );
         connection.release();
         return true;
+    } catch (error) {
+        console.error('Ошибка БД:', error);
+        return false;
+    }
+}
+
+async function banUser(guildId, userId, reason, expiresAt = null) {
+    try {
+        const connection = await pool.getConnection();
+        await connection.execute(
+            'INSERT INTO banned_users (guild_id, user_id, reason, expires_at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE reason = VALUES(reason), expires_at = VALUES(expires_at)',
+            [guildId, userId, reason || null, expiresAt]
+        );
+        connection.release();
+        return true;
+    } catch (error) {
+        console.error('Ошибка БД:', error);
+        return false;
+    }
+}
+
+async function unbanUser(guildId, userId) {
+    try {
+        const connection = await pool.getConnection();
+        await connection.execute('DELETE FROM banned_users WHERE guild_id = ? AND user_id = ?', [guildId, userId]);
+        connection.release();
+        return true;
+    } catch (error) {
+        console.error('Ошибка БД:', error);
+        return false;
+    }
+}
+
+async function isUserBanned(guildId, userId) {
+    try {
+        const connection = await pool.getConnection();
+        const [rows] = await connection.execute('SELECT * FROM banned_users WHERE guild_id = ? AND user_id = ?', [guildId, userId]);
+        connection.release();
+        return rows.length > 0;
     } catch (error) {
         console.error('Ошибка БД:', error);
         return false;
@@ -238,5 +329,10 @@ module.exports = {
     removeDeafenedUser,
     getMutedUsers,
     getDeafenedUsers,
-    clearVoiceStates
+    getVoiceState,
+    removeVoiceState,
+    getRoomByName,
+    banUser,
+    unbanUser,
+    isUserBanned,
 };
